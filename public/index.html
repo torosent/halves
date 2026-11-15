@@ -23,6 +23,8 @@ h1 { margin: 0; font: 700 32px/1 Georgia, serif; letter-spacing: -.5px; }
 #mode { margin-top: 4px; color: var(--muted); font-size: 13px; }
 .help { margin: -8px 0 0; color: var(--muted); font-size: 14px; text-align: center; }
 
+.topbar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; }
+#newgame { font: 600 14px/1 system-ui, sans-serif; padding: 9px 16px; border-radius: 999px; border: 1.5px solid var(--ink); background: none; color: var(--ink); cursor: pointer; }
 .levels { display: flex; border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden; }
 .levels button { font: 600 14px/1 system-ui, sans-serif; padding: 9px 16px; border: 0; background: none; color: var(--ink); cursor: pointer; }
 .levels button + button { border-left: 1.5px solid var(--ink); }
@@ -88,8 +90,11 @@ dialog h2 { margin: 0 0 8px; font: 700 28px Georgia, serif; }
 <main>
   <header><div><h1>Halves</h1><div id="mode"></div></div><span id="timer">0:00</span></header>
   <p class="help">Drag or tap every domino onto the board. Each colored region must match its rule.</p>
-  <div class="levels" role="group" aria-label="Difficulty (opens today’s puzzle)">
-    <button data-level="easy">Easy</button><button data-level="medium">Medium</button><button data-level="hard">Hard</button>
+  <div class="topbar">
+    <div class="levels" role="group" aria-label="Difficulty (opens today’s puzzle)">
+      <button data-level="easy">Easy</button><button data-level="medium">Medium</button><button data-level="hard">Hard</button>
+    </div>
+    <button id="newgame" title="Start a random practice puzzle at this level">New game</button>
   </div>
   <div class="boardwrap"><div class="board" id="board"></div></div>
   <p id="status" aria-live="polite"></p>
@@ -580,6 +585,7 @@ $('undo').onclick = undo;
 $('hint').onclick = hint;
 $('clear').onclick = () => { if (Object.keys(placed).length && !drag?.on) { commit(() => placed = {}); sel = null; render(); } };
 $('again').onclick = () => { $('win').close(); newGame(level, false); };
+$('newgame').onclick = () => newGame(level, false); // practice; today's daily stays saved, a level button goes back to it
 $('share').onclick = $('shareWin').onclick = share;
 document.querySelectorAll('.levels button').forEach(b => b.onclick = () => newGame(b.dataset.level));
 document.addEventListener('keydown', e => {
