@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halves</title>
+<style>
+:root {
+  --bg: #f4efe6; --ink: #2b2622; --muted: #7a7068; --well: #e6ddcf; --line: #d3c8b8;
+  --face: #fffdf8; --pip: #2b2622; --ok: #2f8f5b; --bad: #c8433a; --accent: #d08a1e;
+  --cell: min(64px, calc((100vw - 56px) / var(--cols)));
+  --s: min(45px, calc((100vw - 48px) / 8));
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1d1a17; --ink: #eee6da; --muted: #a39888; --well: #2b2723; --line: #3d3731; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 ui-rounded, system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+main { max-width: 480px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; justify-items: center; }
+header { width: 100%; display: flex; align-items: baseline; justify-content: space-between; }
+h1 { margin: 0; font: 700 32px/1 Georgia, serif; letter-spacing: -.5px; }
+#timer { font-variant-numeric: tabular-nums; color: var(--muted); }
+#mode { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.help { margin: -8px 0 0; color: var(--muted); font-size: 14px; text-align: center; }
+
+.levels { display: flex; border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden; }
+.levels button { font: 600 14px/1 system-ui, sans-serif; padding: 9px 16px; border: 0; background: none; color: var(--ink); cursor: pointer; }
+.levels button + button { border-left: 1.5px solid var(--ink); }
+.levels button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+.boardwrap { padding: 14px; }
+.board { position: relative; display: grid; grid-template-columns: repeat(var(--cols), var(--cell)); grid-template-rows: repeat(var(--rows), var(--cell)); }
+.cell { border: 0; padding: 0; background: var(--well); box-shadow: inset 0 0 0 .5px var(--line); cursor: pointer; }
+.cell.pv-ok { outline: 3px solid var(--ok); outline-offset: -3px; }
+.cell.pv-bad { outline: 3px solid var(--bad); outline-offset: -3px; }
+.cell:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
+.badge { position: absolute; z-index: 3; transform: translate(-35%, -35%); pointer-events: none;
+  min-width: 26px; height: 26px; padding: 0 7px; border-radius: 13px; display: flex; align-items: center; justify-content: center; white-space: nowrap;
+  color: #fff; font: 700 14px/1 system-ui, sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: background .2s; }
+.badge.ok::after { content: " ✓"; white-space: pre; }
+.badge.bad { background: var(--bad) !important; }
+.badge.bad::after { content: " ✕"; white-space: pre; }
+
+.piece { position: absolute; z-index: 2; padding: 4px; border: 0; background: none; cursor: grab; touch-action: none; }
+.domino { display: flex; width: 100%; height: 100%; background: var(--face); border-radius: 10px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.25), 0 4px 10px rgba(0,0,0,.12); transition: transform .15s; }
+.domino.v { flex-direction: column; }
+.half { flex: 1; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 12%; }
+.half:first-child { border-right: 1.5px solid #ddd2c2; }
+.v .half:first-child { border-right: 0; border-bottom: 1.5px solid #ddd2c2; }
+.half i { display: block; width: 72%; aspect-ratio: 1; place-self: center; }
+.half .dot { background: var(--pip); border-radius: 50%; }
+.piece.hint .domino { box-shadow: 0 0 0 3px var(--accent), 0 4px 10px rgba(0,0,0,.12); }
+.ghost { position: fixed; z-index: 10; padding: 4px; pointer-events: none; opacity: .9; }
+.ghost .domino { box-shadow: 0 8px 20px rgba(0,0,0,.3); }
+
+.tray { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; min-height: calc(var(--s) * 2); }
+.slot { width: calc(var(--s) * 2); height: calc(var(--s) * 2); display: grid; place-items: center;
+  border: 0; border-radius: 12px; background: none; cursor: grab; touch-action: none; }
+.slot .domino { width: calc(var(--s) * 2 - 8px); height: calc(var(--s) - 4px); }
+.slot.sel { background: var(--well); }
+.slot.sel .domino { box-shadow: 0 0 0 3px var(--ink), 0 4px 10px rgba(0,0,0,.12); }
+.slot:focus-visible { outline: 3px solid var(--ink); }
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.controls button, dialog button { font: 600 15px/1 system-ui, sans-serif; padding: 10px 16px; border-radius: 999px;
+  border: 1.5px solid var(--ink); background: none; color: var(--ink); cursor: pointer; }
+.controls button:disabled { opacity: .35; cursor: default; }
+#status { min-height: 1.4em; margin: 0; color: var(--muted); font-size: 14px; }
+dialog { border: 0; border-radius: 16px; padding: 24px 28px; background: var(--bg); color: var(--ink); text-align: center; }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+dialog h2 { margin: 0 0 8px; font: 700 28px Georgia, serif; }
+.controls button.primary, #share { background: var(--ink); color: var(--bg); }
+
+/* motion: a placed piece settles, a met rule pops, a solved board ripples */
+@keyframes settle { from { transform: scale(1.12); opacity: .6; } }
+@keyframes pop { 50% { transform: translate(-35%, -35%) scale(1.3); } }
+@keyframes wave { 40% { transform: translateY(-10px) rotate(-3deg); } }
+.piece.drop .domino { animation: settle .18s ease-out; }
+.badge.ok { animation: pop .35s ease-out; }
+.board.won .domino { animation: wave .5s ease-in-out calc(var(--i) * 60ms) both; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+[inert]:is(.boardwrap, .tray, .controls) { opacity: .35; transition: opacity .2s .15s; } /* delay: fast puzzles don't flash */
+</style>
+</head>
+<body>
+<main>
+  <header><div><h1>Halves</h1><div id="mode"></div></div><span id="timer">0:00</span></header>
+  <p class="help">Drag or tap every domino onto the board. Each colored region must match its rule.</p>
+  <div class="levels" role="group" aria-label="Difficulty (opens today’s puzzle)">
+    <button data-level="easy">Easy</button><button data-level="medium">Medium</button><button data-level="hard">Hard</button>
+  </div>
+  <div class="boardwrap"><div class="board" id="board"></div></div>
+  <p id="status" aria-live="polite"></p>
+  <div class="controls">
+    <button id="rotate">Rotate (R)</button>
+    <button id="undo">Undo</button>
+    <button id="hint">Hint</button>
+    <button id="clear">Clear</button>
+    <button id="share" hidden>Share</button>
+  </div>
+  <div class="tray" id="tray" aria-label="Dominoes to place"></div>
+</main>
+<dialog id="win"><h2>Solved</h2><p id="winText"></p>
+  <div class="controls"><button id="shareWin" class="primary">Share</button><button id="again">Play a random one</button></div>
+</dialog>
+<script id="gen">
+// Shared helpers + puzzle generator. This block also runs inside a Web Worker (see newGame), so it must not touch the page.
+const DIRS = [[0,1],[1,0],[0,-1],[-1,0]];
+// loose/free = starting share of inequality / rule-less regions, fixes = max tightenings,
+// loosen = relax attempts after the puzzle is unique, mergeTo = biggest merged region
+const LEVELS = {
+  easy:   { dominoes: 5,  box: 4, minRegion: 1, maxRegion: 3, loose: .25, free: .1, fixes: 6,  loosen: 3,  mergeTo: 3 },
+  medium: { dominoes: 8,  box: 5, minRegion: 2, maxRegion: 3, loose: .4,  free: .1, fixes: 10, loosen: 15, mergeTo: 4 },
+  hard:   { dominoes: 12, box: 6, minRegion: 2, maxRegion: 4, loose: .5,  free: .1, fixes: 14, loosen: 40, mergeTo: 6 },
+};
+const key = ([r, c]) => r + ',' + c;
+const unkey = k => k.split(',').map(Number);
+const near4 = k => { const [r, c] = unkey(k); return DIRS.map(([dr, dc]) => (r + dr) + ',' + (c + dc)); }; // in DIRS order: right, down, left, up
+// All generator randomness goes through `random`, so a seed (date + level) gives everyone the same puzzle.
+let random = Math.random;
+function seeded(text) { // mulberry32, seeded with an FNV-1a hash of the text
+  let h = 2166136261;
+  for (const ch of text) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return () => {
+    h = (h + 0x6D2B79F5) | 0;
+    let t = Math.imul(h ^ (h >>> 15), 1 | h);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rnd = n => Math.floor(random() * n);
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// 'ok' = satisfied, 'bad' = can no longer be satisfied, '' = not decided yet. o: cell key -> { v }
+function status(g, o) {
+  const vals = g.cells.map(c => o[key(c)]?.v).filter(v => v !== undefined);
+  const empty = g.cells.length - vals.length, s = vals.reduce((a, b) => a + b, 0);
+  const bad = { sum: s > g.n || s + 6 * empty < g.n, lt: s >= g.n, gt: s + 6 * empty <= g.n,
+    eq: vals.some(v => v !== vals[0]), neq: new Set(vals).size < vals.length }[g.type];
+  return bad ? 'bad' : empty ? '' : 'ok';
+}
+
+// ---------- generator ----------
+// Searches for a solution whose cell values differ from `val`. Returns it, null if none, or 'timeout'.
+function findOther(P, val, budget = 30000) {
+  const cells = P.cells.map(key), has = new Set(cells), rOf = {}, o = {}, used = P.dominoes.map(() => false);
+  const nbrs = Object.fromEntries(cells.map(k => [k, near4(k).filter(n => has.has(n))]));
+  P.regions.forEach((g, i) => g.cells.forEach(c => rOf[key(c)] = i));
+  const fine = k => rOf[k] === undefined || status(P.regions[rOf[k]], o) !== 'bad';
+  function rec() {
+    if (--budget < 0) throw 'timeout';
+    // fill the empty cell with the fewest empty neighbours first; one with none is a dead end
+    let k = null, ns = null;
+    for (const c of cells) {
+      if (o[c]) continue;
+      const e = nbrs[c].filter(n => !o[n]);
+      if (!k || e.length < ns.length) { k = c; ns = e; }
+      if (e.length < 2) break;
+    }
+    if (!k) return cells.some(c => o[c].v !== val[c]) ? Object.fromEntries(cells.map(c => [c, o[c].v])) : null;
+    for (const n of ns) {
+      for (let i = 0; i < P.dominoes.length; i++) {
+        if (used[i]) continue;
+        const [a, b] = P.dominoes[i];
+        for (const [x, y] of a === b ? [[a, b]] : [[a, b], [b, a]]) {
+          used[i] = true; o[k] = { v: x }; o[n] = { v: y };
+          const res = fine(k) && fine(n) ? rec() : null;
+          if (res) return res;
+          used[i] = false; delete o[k]; delete o[n];
+        }
+      }
+    }
+    return null;
+  }
+  try { return rec(); } catch (e) { if (e === 'timeout') return e; throw e; }
+}
+
+function tryGenerate(L) {
+  // 1. grow the board one domino at a time; that tiling is the solution
+  const taken = new Set(), sol = [];
+  const free = ([r, c]) => r >= 0 && c >= 0 && r < L.box && c < L.box && !taken.has(r + ',' + c);
+  const add = cells => { cells.forEach(c => taken.add(key(c))); sol.push({ cells }); };
+  const r0 = rnd(L.box), c0 = rnd(L.box - 1);
+  add([[r0, c0], [r0, c0 + 1]]);
+  while (sol.length < L.dominoes) {
+    const opts = [];
+    for (const k of taken) {
+      const [r, c] = unkey(k);
+      for (const [dr, dc] of DIRS) {
+        const a = [r + dr, c + dc];
+        if (free(a)) for (const [er, ec] of DIRS) { const b = [a[0] + er, a[1] + ec]; if (free(b)) opts.push([a, b]); }
+      }
+    }
+    if (!opts.length) return null;
+    add(opts[rnd(opts.length)]);
+  }
+  // 2. distinct dominoes from a double-six set, each randomly flipped
+  const set = [];
+  for (let a = 0; a <= 6; a++) for (let b = a; b <= 6; b++) set.push([a, b]);
+  shuffle(set);
+  sol.forEach((s, i) => s.vals = rnd(2) ? set[i] : [set[i][1], set[i][0]]);
+  shuffle(sol); // tray order must not reveal the build order
+  const val = {};
+  sol.forEach(s => s.cells.forEach((c, i) => val[key(c)] = s.vals[i]));
+  const keys = Object.keys(val).sort((a, b) => unkey(a)[0] - unkey(b)[0] || unkey(a)[1] - unkey(b)[1]);
+  // 3. split the board into connected regions and give each a rule the solution meets
+  const rOf = {}, groups = [];
+  for (const start of shuffle([...keys])) {
+    if (start in rOf) continue;
+    const g = [start], size = L.minRegion + rnd(L.maxRegion - L.minRegion + 1);
+    rOf[start] = groups.length;
+    while (g.length < size) {
+      const next = shuffle(g.flatMap(k => near4(k)).filter(k => k in val && !(k in rOf)));
+      if (!next.length) break;
+      rOf[next[0]] = groups.length; g.push(next[0]);
+    }
+    groups.push(g);
+  }
+  const exact = ks => ({ ks, type: 'sum', n: ks.reduce((s, k) => s + val[k], 0) });
+  const loose = ks => {
+    const v = ks.map(k => val[k]), s = v.reduce((a, b) => a + b, 0), opts = [{ ks, type: 'lt', n: s + 1 + rnd(3) }];
+    if (s > 0) opts.push({ ks, type: 'gt', n: Math.max(0, s - 1 - rnd(3)) });
+    if (v.length > 1 && v.every(x => x === v[0])) opts.push({ ks, type: 'eq' }, { ks, type: 'eq' });
+    if (v.length > 1 && new Set(v).size === v.length) opts.push({ ks, type: 'neq' });
+    return opts[rnd(opts.length)];
+  };
+  let rules = groups.map(ks => random() < L.free ? { ks, type: null } : random() < L.loose ? loose(ks) : exact(ks));
+  const pieces = ks => { // connected parts of a cell list
+    const left = new Set(ks), parts = [];
+    for (const s of ks) {
+      if (!left.has(s)) continue;
+      const part = [s]; left.delete(s);
+      for (let j = 0; j < part.length; j++) for (const n of near4(part[j])) if (left.delete(n)) part.push(n);
+      parts.push(part);
+    }
+    return parts;
+  };
+  const build = rules => ({
+    cells: keys.map(unkey), dominoes: sol.map(s => rnd(2) ? s.vals : [s.vals[1], s.vals[0]]), // tray shows a random flip
+    regions: rules.filter(g => g.type).map(({ ks, ...g }) => ({ ...g, cells: ks.map(unkey) })),
+    solution: sol,
+  });
+  // 4. tighten rules until no other solution exists
+  let P = null;
+  for (let tries = 0; tries <= L.fixes; tries++) {
+    const p = build(rules), other = findOther(p, val);
+    if (!other) { P = p; break; }
+    // on timeout any loose region may help; otherwise only regions where the other solution differs
+    const diff = other === 'timeout' ? keys : keys.filter(k => other[k] !== val[k]);
+    if (!diff.length) return null; // same values, different tiling: start over
+    const ruleOf = k => rules.find(g => g.ks.includes(k));
+    const soft = diff.filter(k => ruleOf(k).type !== 'sum'); // prefer tightening a loose rule over splitting an exact one
+    if (other === 'timeout' && !soft.length) return null;
+    const pool = soft.length ? soft : diff, k = pool[rnd(pool.length)], g = ruleOf(k), i = rules.indexOf(g);
+    // loose or no rule -> exact sum; already exact -> give k its own exact cell
+    rules.splice(i, 1, ...(g.type === 'sum' ? [exact([k]), ...pieces(g.ks.filter(c => c !== k)).map(exact)] : [exact(g.ks)]));
+  }
+  if (!P) return null;
+  // 5. loosen: relax rules one at a time, keeping each change that leaves the solution unique.
+  // More rounds = sparser rules = harder puzzle.
+  const touches = (a, b) => a.ks.some(k => near4(k).some(n => b.ks.includes(n)));
+  for (let n = 0; n < L.loosen; n++) {
+    const i = rnd(rules.length), g = rules[i], roll = random();
+    let cand;
+    if (roll < .5) { // merge with a neighbouring region into one exact sum
+      const near = rules.filter(h => h !== g && touches(g, h) && g.ks.length + h.ks.length <= L.mergeTo);
+      if (!near.length) continue;
+      const h = near[rnd(near.length)];
+      cand = rules.filter(x => x !== g && x !== h).concat(exact([...g.ks, ...h.ks]));
+    } else if (roll < .85) { if (g.type !== 'sum') continue; cand = rules.with(i, loose(g.ks)); }
+    else { if (!g.type) continue; cand = rules.with(i, { ks: g.ks, type: null }); }
+    const p = build(cand);
+    if (findOther(p, val, 8000) === null) { rules = cand; P = p; } // timeout = reject the change
+  }
+  return P;
+}
+function generate(level, seed) {
+  random = seed ? seeded(seed) : Math.random; // solver budgets count steps, not time, so a seed gives the same puzzle on any device
+  for (;;) { const p = tryGenerate(LEVELS[level]); if (p) return p; }
+}
+
+</script>
+<script>
+// ---------- game ----------
+const HUES = [12, 205, 140, 45, 275, 330, 180, 90, 245, 25];
+const PIPS = [[], [4], [0,8], [0,4,8], [0,2,6,8], [0,2,4,6,8], [0,2,3,5,6,8]];
+const ruleText = g => ({ sum: String(g.n), lt: '<' + g.n, gt: '>' + g.n, eq: '=', neq: '≠' })[g.type];
+const ruleWords = g => ({ sum: `sum is ${g.n}`, lt: `sum under ${g.n}`, gt: `sum over ${g.n}`, eq: 'all equal', neq: 'all different' })[g.type];
+const $ = id => document.getElementById(id);
+
+let P, level, daily, seed, rows, cols, inBoard, regionOf, cellEl = {}, badges;
+let placed = {}, sel = null, rot = 0, history = [], hints = 0, t0 = Date.now(), won = false, hov = null, drag = null, eatClick = false, fresh = null, endMs = 0;
+const board = $('board');
+const LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
+
+// Saved daily progress, one localStorage entry per puzzle. Storage can be missing or full: the game still works without it.
+// shortcut: old days' entries are never pruned (a few hundred bytes each); prune if that ever matters.
+function load(s) { try { return JSON.parse(localStorage.getItem('halves:' + s)); } catch { return null; } }
+function save() {
+  if (!seed || !P) return;
+  try { localStorage.setItem('halves:' + seed, JSON.stringify({ placed, hints, ms: won ? endMs : Date.now() - t0, won })); } catch {}
+}
+function markSolved() {
+  document.querySelectorAll('.levels button').forEach(b => {
+    const done = load(`${today()}:${b.dataset.level}`)?.won;
+    b.textContent = LABELS[b.dataset.level] + (done ? ' ✓' : '');
+    b.title = done ? "Solved today" : '';
+  });
+}
+// stored data is untrusted: only accept pieces that are real dominoes on real cells
+function restore(s) {
+  const ok = s && typeof s.placed === 'object' && Object.entries(s.placed).every(([id, p]) => P.dominoes[id] &&
+    Array.isArray(p.cells) && p.cells.length === 2 && p.cells.every(k => inBoard.has(k)) &&
+    Array.isArray(p.vals) && [...p.vals].sort().join() === [...P.dominoes[id]].sort().join());
+  if (!ok) return;
+  placed = s.placed; hints = +s.hints || 0; endMs = +s.ms || 0; t0 = Date.now() - endMs; won = !!s.won;
+  tick(); say(won ? `Solved in ${$('timer').textContent}.` : 'Picked up where you left off.'); render();
+}
+addEventListener('pagehide', save);
+
+// Wordle-style result: one square per domino, yellow where a hint placed it
+function shareText() {
+  const squares = P.solution.map((_, i) => placed[i]?.hint ? '🟨' : '🟩').join('');
+  const date = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `Halves · ${daily ? `${LABELS[level]} · ${date}` : `Practice ${LABELS[level]}`}\n${squares}\n${$('timer').textContent} · ${hints ? hints + ' hint' + (hints > 1 ? 's' : '') : 'no hints'}`;
+}
+async function share() {
+  const text = shareText();
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); say('Result copied — paste it anywhere.'); }
+  } catch (e) { if (e.name !== 'AbortError') say(text); } // no share or clipboard access: show the text to copy by hand
+}
+
+// Generation runs in a worker so Hard doesn't freeze the page.
+const GEN_URL = URL.createObjectURL(new Blob([$('gen').textContent +
+  '\nonmessage = e => postMessage({ id: e.data.id, P: generate(e.data.level, e.data.seed) });'], { type: 'text/javascript' }));
+let worker = null, request = 0, busy = false;
+function setBusy(b) { busy = b; document.querySelectorAll('.boardwrap, .tray, .controls').forEach(el => el.inert = b); }
+function makeWorker() {
+  try { return new Worker(GEN_URL); } catch { return null; } // workers blocked (e.g. some file:// setups): generate on the page
+}
+// Daily: today's local date + level seeds the puzzle. Practice: a fresh random one.
+function newGame(lv, isDaily = true) {
+  if (P && !busy) save(); // keep the time on the puzzle being left
+  level = lv; daily = isDaily; P = null;
+  const id = ++request, now = new Date();
+  seed = daily ? `${today()}:${lv}` : null;
+  document.querySelectorAll('.levels button').forEach(b => b.setAttribute('aria-pressed', b.dataset.level === lv));
+  markSolved();
+  $('mode').textContent = daily ? 'Daily · ' + now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'Practice';
+  if (busy) { worker?.terminate(); worker = null; } // drop the stale request
+  setBusy(true);
+  say(`Making a${lv === 'easy' ? 'n' : ''} ${lv} puzzle…`);
+  worker ??= makeWorker();
+  if (!worker) return start(generate(lv, seed), id);
+  worker.onmessage = e => start(e.data.P, e.data.id);
+  worker.onerror = () => { worker = null; start(generate(lv, seed), id); };
+  worker.postMessage({ level: lv, id, seed });
+}
+function start(p, id) {
+  if (id !== request) return; // the player already asked for another puzzle
+  P = p;
+  { // self-check: the stored solution covers the board and meets every rule
+    const o = {};
+    P.solution.forEach(s => s.cells.forEach((c, i) => o[key(c)] = { v: s.vals[i] }));
+    console.assert(P.cells.every(c => o[key(c)]) && P.regions.every(g => status(g, o) === 'ok'), 'generated solution is invalid', P);
+  }
+  setBusy(false);
+  const saved = seed && load(seed); // read before reset() saves the empty board over it
+  buildBoard(); reset();
+  restore(saved);
+  markSolved(); // a rejected save was just overwritten, so refresh the ✓ marks
+}
+function reset() { placed = {}; sel = null; rot = 0; history = []; hints = 0; t0 = Date.now(); won = false; board.classList.remove('won'); say(''); tick(); render(); }
+
+function buildBoard() {
+  rows = Math.max(...P.cells.map(c => c[0])) + 1; cols = Math.max(...P.cells.map(c => c[1])) + 1;
+  inBoard = new Set(P.cells.map(key)); regionOf = {}; cellEl = {};
+  P.regions.forEach((g, i) => g.cells.forEach(c => regionOf[key(c)] = i));
+  board.replaceChildren();
+  board.style.setProperty('--rows', rows);
+  document.documentElement.style.setProperty('--cols', cols);
+  // color regions so neighbours never share a hue
+  const hue = [];
+  P.regions.forEach((g, i) => {
+    const near = new Set(g.cells.flatMap(c => near4(key(c)).map(n => hue[regionOf[n]])));
+    const start = i % HUES.length; // rotate the palette so colors spread out
+    hue[i] = [...HUES.slice(start), ...HUES.slice(0, start)].find(h => !near.has(h)) ?? HUES[start];
+  });
+  for (const [r, c] of P.cells) {
+    const k = r + ',' + c, b = document.createElement('button'), g = regionOf[k];
+    b.className = 'cell'; b.dataset.k = k; b.style.gridArea = `${r + 1} / ${c + 1}`;
+    if (g !== undefined) {
+      const tint = `hsl(${hue[g]} 65% 55% / .32)`, edge = `2.5px solid hsl(${hue[g]} 55% 45%)`;
+      b.style.background = `linear-gradient(${tint}, ${tint}), var(--well)`;
+      near4(k).forEach((n, j) => { if (regionOf[n] !== g) b.style['border' + ['Right', 'Bottom', 'Left', 'Top'][j]] = edge; });
+    }
+    b.onclick = () => clickCell(k);
+    b.onpointerenter = b.onfocus = () => { if (!drag) { hov = k; preview(); } };
+    b.onpointerleave = b.onblur = () => { if (!drag) { hov = null; preview(); } };
+    board.append(cellEl[k] = b);
+  }
+  badges = P.regions.map((g, i) => {
+    const [r, c] = [...g.cells].sort((a, b) => a[0] - b[0] || a[1] - b[1])[0];
+    const el = document.createElement('div');
+    el.className = 'badge'; el.textContent = ruleText(g);
+    el.style.cssText = `left:calc(var(--cell) * ${c}); top:calc(var(--cell) * ${r}); background:hsl(${hue[i]} 55% 40%)`;
+    board.append(el);
+    return el;
+  });
+}
+
+function occ() {
+  const o = {};
+  for (const [id, p] of Object.entries(placed)) p.cells.forEach((k, i) => o[k] = { id: +id, v: p.vals[i] });
+  return o;
+}
+function oriented() { const [a, b] = P.dominoes[sel]; return rot < 2 ? [a, b] : [b, a]; }
+function target(k) { const [r, c] = unkey(k); return { cells: [k, rot % 2 ? (r + 1) + ',' + c : r + ',' + (c + 1)], vals: oriented() }; }
+const fits = (t, o) => t.cells.every(k => inBoard.has(k) && !o[k]);
+function commit(fn) { history.push(structuredClone(placed)); fn(); }
+function say(msg) { $('status').textContent = msg; }
+
+function clickCell(k) {
+  if (won) return;
+  const o = occ();
+  if (sel === null) { if (o[k]) pickUp(o[k].id); return; }
+  const t = target(k);
+  if (!fits(t, o)) return say("That domino doesn't fit there.");
+  commit(() => placed[sel] = t);
+  fresh = sel; sel = null; say(''); render();
+}
+
+function pickUp(id) {
+  const p = placed[id], horiz = unkey(p.cells[0])[0] === unkey(p.cells[1])[0];
+  rot = (horiz ? 0 : 1) + (p.vals[0] !== P.dominoes[id][0] ? 2 : 0); // keep how it was lying
+  commit(() => delete placed[id]);
+  sel = id; render();
+}
+
+function undo() { if (!history.length || won || drag?.on) return; placed = history.pop(); sel = null; say(''); render(); }
+
+function hint() {
+  if (won || drag?.on) return;
+  const o = occ();
+  const s = P.solution.find(s => {
+    const [k1, k2] = s.cells.map(key);
+    // compare pips, not pieces: another tiling with the same pips is just as right
+    return !(o[k1]?.v === s.vals[0] && o[k2]?.v === s.vals[1]);
+  });
+  if (!s) return;
+  const [k1, k2] = s.cells.map(key);
+  const id = P.solution.indexOf(s); // generator builds dominoes in solution order
+  commit(() => {
+    for (const k of [k1, k2]) if (o[k]) delete placed[o[k].id];
+    placed[id] = { cells: [k1, k2], vals: s.vals, hint: true };
+  });
+  hints++; fresh = id; sel = null; say('Hint placed.'); render();
+}
+
+// ---------- drag ----------
+function dragStart(e, id, fromBoard) {
+  if (won || e.button > 0) return;
+  drag = { id, fromBoard, x0: e.clientX, y0: e.clientY, on: false };
+}
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (!drag.on) {
+    if (Math.hypot(drag.x - drag.x0, drag.y - drag.y0) < 6) return;
+    drag.on = true;
+    // the pressed piece/slot is about to be re-rendered away; keep the pointer's events coming to us
+    try { document.body.setPointerCapture(e.pointerId); } catch {} // throws only for an already-ended pointer
+    drag.ghost = document.body.appendChild(document.createElement('div'));
+    drag.ghost.className = 'ghost';
+    if (drag.fromBoard) pickUp(drag.id); else { if (sel !== drag.id) rot = 0; sel = drag.id; render(); }
+  }
+  const el = document.elementFromPoint(drag.x, drag.y);
+  hov = el?.dataset.k ?? null;
+  drawGhost(); preview();
+});
+function dragEnd(drop) {
+  const d = drag; drag = null;
+  if (!d?.on) return; // a plain tap: the click handlers take it
+  d.ghost.remove();
+  eatClick = true; setTimeout(() => eatClick = false);
+  if (drop && hov) clickCell(hov);
+  if (d.fromBoard && placed[d.id]) {
+    history.pop(); // a move is one undo step, not pick-up + place
+    if (JSON.stringify(history.at(-1)) === JSON.stringify(placed)) history.pop(); // dropped where it was: no step at all
+  }
+  hov = null; render();
+}
+document.addEventListener('pointerup', () => dragEnd(true));
+document.addEventListener('pointercancel', () => dragEnd(false));
+document.addEventListener('click', e => { if (eatClick) { e.stopPropagation(); eatClick = false; } }, true);
+function drawGhost() {
+  if (!drag?.on || sel === null) return;
+  const v = rot % 2, size = Object.values(cellEl)[0].offsetWidth;
+  if (drag.drawn !== rot) { drag.ghost.replaceChildren(domino(oriented(), v)); drag.drawn = rot; } // rebuild only on rotate
+  // first half sits under the pointer, matching where a drop lands
+  drag.ghost.style.cssText = `left:${drag.x - size / 2}px; top:${drag.y - size / 2}px; width:${size * (v ? 1 : 2)}px; height:${size * (v ? 2 : 1)}px`;
+}
+
+// ---------- render ----------
+function face(v) {
+  const h = document.createElement('span');
+  h.className = 'half';
+  for (let i = 0; i < 9; i++) { const d = document.createElement('i'); if (PIPS[v].includes(i)) d.className = 'dot'; h.append(d); }
+  return h;
+}
+function domino(vals, vertical) {
+  const d = document.createElement('span');
+  d.className = 'domino' + (vertical ? ' v' : '');
+  d.append(face(vals[0]), face(vals[1]));
+  return d;
+}
+
+function preview() {
+  for (const el of Object.values(cellEl)) el.classList.remove('pv-ok', 'pv-bad');
+  if (sel === null || hov === null || won) return;
+  const t = target(hov), cls = fits(t, occ()) ? 'pv-ok' : 'pv-bad';
+  t.cells.forEach(k => cellEl[k]?.classList.add(cls));
+}
+
+function render() {
+  const o = occ();
+  board.querySelectorAll('.piece').forEach(el => el.remove());
+  for (const [id, p] of Object.entries(placed)) {
+    const [[r1, c1], [r2, c2]] = p.cells.map(unkey), v = c1 === c2;
+    const el = document.createElement('button');
+    el.className = 'piece' + (p.hint ? ' hint' : '') + (+id === fresh ? ' drop' : ''); // only the newly placed piece animates
+    el.tabIndex = -1; el.setAttribute('aria-hidden', 'true'); // keyboard users act through the cells
+    el.style.cssText = `left:calc(var(--cell) * ${Math.min(c1, c2)}); top:calc(var(--cell) * ${Math.min(r1, r2)});
+      width:calc(var(--cell) * ${v ? 1 : 2}); height:calc(var(--cell) * ${v ? 2 : 1}); --i:${r1 + c1}`; // --i staggers the win wave
+    el.append(domino(p.vals, v));
+    el.onclick = () => !won && pickUp(+id);
+    el.onpointerdown = e => dragStart(e, +id, true);
+    board.append(el);
+  }
+  fresh = null;
+  $('tray').replaceChildren(...P.dominoes.map((d, i) => {
+    if (placed[i]) return '';
+    const b = document.createElement('button'), dom = domino(d, false);
+    b.className = 'slot' + (sel === i ? ' sel' : '');
+    b.setAttribute('aria-label', `Domino ${d[0]} and ${d[1]}` + (sel === i ? ', selected' : ''));
+    if (sel === i) dom.style.transform = `rotate(${rot * 90}deg)`;
+    b.append(dom);
+    b.onclick = () => { if (won) return; if (sel === i) rot = (rot + 1) % 4; else { sel = i; rot = 0; } render(); };
+    b.onpointerdown = e => dragStart(e, i, false);
+    return b;
+  }));
+  P.regions.forEach((g, i) => badges[i].className = 'badge ' + status(g, o));
+  for (const [k, el] of Object.entries(cellEl)) {
+    const [r, c] = unkey(k), g = P.regions[regionOf[k]];
+    el.setAttribute('aria-label', `Row ${r + 1}, column ${c + 1}` + (g ? `, rule: ${ruleWords(g)}` : '') + (o[k] ? `, ${o[k].v} pips` : ', empty'));
+  }
+  $('undo').disabled = !history.length || won;
+  $('hint').disabled = $('clear').disabled = won;
+  $('rotate').disabled = sel === null || won;
+  $('share').hidden = !won;
+  preview(); drawGhost();
+  if (!won && P.cells.every(c => o[key(c)]) && P.regions.every(g => status(g, o) === 'ok')) {
+    tick(); won = true; endMs = Date.now() - t0;
+    board.classList.add('won'); render(); // re-render so every piece picks up the win wave
+    $('winText').textContent = `${daily ? 'Daily' : 'Practice'} ${LABELS[level]} · ${$('timer').textContent}` + (hints ? ` · ${hints} hint${hints > 1 ? 's' : ''}` : ' · no hints');
+    markSolved();
+    const r = request;
+    setTimeout(() => r === request && won && $('win').showModal(), 700); // let the wave play first; skip if the player moved on
+  }
+  save();
+}
+
+$('rotate').onclick = () => { if (sel !== null) { rot = (rot + 1) % 4; render(); } };
+$('undo').onclick = undo;
+$('hint').onclick = hint;
+$('clear').onclick = () => { if (Object.keys(placed).length && !drag?.on) { commit(() => placed = {}); sel = null; render(); } };
+$('again').onclick = () => { $('win').close(); newGame(level, false); };
+$('share').onclick = $('shareWin').onclick = share;
+document.querySelectorAll('.levels button').forEach(b => b.onclick = () => newGame(b.dataset.level));
+document.addEventListener('keydown', e => {
+  if (busy || !P) return; // no puzzle on screen yet
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); undo(); }
+  else if (e.key === 'r' || e.key === 'R') $('rotate').click();
+  else if (e.key === 'Escape' && sel !== null && !drag) { sel = null; render(); }
+});
+function tick() {
+  const s = Math.floor((Date.now() - t0) / 1000);
+  $('timer').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+setInterval(() => won || tick(), 250);
+newGame('easy');
+</script>
+</body>
+</html>

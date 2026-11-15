@@ -1,0 +1,7 @@
+// Static site: Cloudflare serves public/ as-is, no Worker code. Deploy: npx wrangler deploy
+{
+  "name": "halves",
+  "compatibility_date": "2026-11-14",
+  "assets": { "directory": "./public" },
+  "routes": [{ "pattern": "halves.tomer.dev", "custom_domain": true }]
+}
